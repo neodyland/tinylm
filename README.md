@@ -1,8 +1,14 @@
 # 使い方
 ```sh
+# Qwen3-0.6Bを実行します。
 # 最大まで最適化された状態で実行します。コンパイルには数分から数十分かかります。
 # ソースコードの変更がなければ、一度コンパイルすれば二度目以降は比較的高速になります。
-CUDA=1 BEAM=2 uv run main.py
+CUDA=1 BEAM=2 uv run main_qwen3.py
+
+# Llama3.2-1B-instructを実行します。
+# ぱっと見それっぽく動いていますが、実際のところropeあたりの実装がおかしいはずです。
+# 動くには動きます。
+CUDA=1 BEAM=2 uv run main_llama3.py
 
 # tinygradで使用可能なバックエンドを表示します。
 uv run python -m tinygrad.device

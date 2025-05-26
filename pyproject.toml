@@ -1,7 +1,7 @@
 [project]
-name = "tg"
+name = "tinylm"
 version = "0.1.0"
-description = "Add your description here"
+description = "Transformers but for tinygrad"
 readme = "README.md"
 requires-python = ">=3.13.3"
 dependencies = [
@@ -19,4 +19,5 @@ tinygrad = { git = "https://github.com/tinygrad/tinygrad.git" }
 [dependency-groups]
 dev = [
     "ruff>=0.11.10",
+    "ty>=0.0.1a6",
 ]
