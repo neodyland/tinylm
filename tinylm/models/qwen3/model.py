@@ -12,7 +12,7 @@ from ..abstract.causal_lm import (
     LlamaAbstractCausalLMForInference,
     LlamaAbstractCausalLMForTraining,
 )
-from tinygrad import nn, Tensor, TinyJit, dtypes
+from tinygrad import nn, Tensor, TinyJit
 from typing import List, Optional, Tuple
 
 

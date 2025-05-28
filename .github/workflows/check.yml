@@ -1,0 +1,24 @@
+name: Lint
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+      - name: Install python
+        run: uv python install
+      - name: Install dependencies
+        run: uv sync --no-dev --all-extras --frozen --no-cache
+      - name: Run format check
+        run: uv run ruff format --check --diff
+      - name: Run lint check
+        run: uv run ruff check --diff
+      - name: Run type check
+        run: uv run ty check

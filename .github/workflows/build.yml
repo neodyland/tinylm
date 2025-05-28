@@ -1,0 +1,63 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+
+jobs:
+  docker:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - tag: ghcr.io/neodyland/tinylm:latest-arm64
+            runs-on: ubuntu-latest
+          - tag: ghcr.io/neodyland/tinylm:latest-amd64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: ${{ matrix.tag }}
+          push: true
+
+  docker-merge:
+    runs-on: ubuntu-latest
+    needs:
+      - docker
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Merge
+        run: |
+          docker buildx imagetools create -t ghcr.io/neodyland/tinylm:latest \
+              ghcr.io/neodyland/tinylm:latest-amd64 \
+              ghcr.io/neodyland/tinylm:latest-arm64
