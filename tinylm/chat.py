@@ -1,44 +1,64 @@
-from tinygrad import Tensor, nn
+from tinygrad import Tensor, nn, Device
+from tinygrad.tensor import DType
 from transformers import AutoTokenizer
-from typing import Any
+from typing import Any, Dict, Tuple
 from huggingface_hub import hf_hub_download
 import time
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.live import Live
+from tinylm.models.llama3.model import Llama3ModelForCasualLM
 from tinylm.models.qwen3.model import Qwen3ModelForCasualLM
 from tinylm.models.llama.generation_context import LlamaGenerationContext
+from tinylm.clidefs import ModelLiteral
+from tinylm.remote_chat import styled_markdown
 
 
-def styled_markdown(text: str) -> Markdown:
-    text = text.replace("<think>\n\n</think>", "")
-    text = text.replace("\n", "\n\n")
-    if "</think>" in text:
-        thinking_content = text.split("</think>")[0].split("<think>")[-1].strip()
-        answer_content = text.split("</think>")[-1].strip()
-        thinking_content = f"> {thinking_content.replace('\n\n', '\n>\n> ')}"
-        text = f"{thinking_content}\n\n{answer_content}"
-    return Markdown(
-        text,
-    )
+def model_factory(model: ModelLiteral):
+    if model == "unsloth/Llama-3.2-1B-Instruct":
+        return Llama3ModelForCasualLM(
+            num_layers=16,
+            dim=2048,
+            ffn_dim=8192,
+            kv_heads=8,
+            head_dim=64,
+            vocab_size=128256,
+            rope_theta=500000.0,
+            att_heads=32,
+            ctx_len=8192,
+        )
+    elif model == "unsloth/Qwen3-0.6B":
+        return Qwen3ModelForCasualLM(
+            num_layers=28,
+            dim=1024,
+            ffn_dim=3072,
+            kv_heads=8,
+            head_dim=128,
+            vocab_size=151936,
+            rope_theta=1000000,
+            att_heads=16,
+            ctx_len=40960,
+        )
 
 
-def main():
-    Tensor.no_grad = True
-    tokenizer: Any = AutoTokenizer.from_pretrained("unsloth/Qwen3-0.6B")
-    model = Qwen3ModelForCasualLM(
-        num_layers=28,
-        dim=1024,
-        ffn_dim=3072,
-        kv_heads=8,
-        head_dim=128,
-        vocab_size=151936,
-        rope_theta=1000000,
-        att_heads=16,
-        ctx_len=40960,
-    )
-    path = hf_hub_download("unsloth/Qwen3-0.6B", "model.safetensors")
+def state_dict_to_dtype(
+    state_dict: Dict[str, Tensor], dtype: DType
+) -> Dict[str, Tensor]:
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        new_state_dict[key] = value.to(Device.DEFAULT).cast(dtype)
+    return new_state_dict
+
+
+def load_model(
+    console: Console,
+    model: ModelLiteral,
+    dtype: DType,
+) -> Tuple[Any, LlamaGenerationContext]:
+    tokenizer: Any = AutoTokenizer.from_pretrained(model)
+    path = hf_hub_download(model, "model.safetensors")
+    model = model_factory(model)
     state_dict = nn.state.safe_load(path)
+    state_dict = state_dict_to_dtype(state_dict, dtype=dtype)
     state_dict["model.rotary_emb.sin"] = model.model.rotary_emb.sin
     state_dict["model.rotary_emb.cos"] = model.model.rotary_emb.cos
     state_dict["lm_head.weight"] = state_dict["model.embed_tokens.weight"]
@@ -59,6 +79,13 @@ def main():
         top_p=0.8,
         top_k=20,
     )
+    return tokenizer, context
+
+
+@Tensor.test()
+def chat_main(model: ModelLiteral, dtype: DType):
+    console = Console()
+    tokenizer, context = load_model(console, model, dtype)
     console.print("Start warmup...", style="green")
     context.warmup()
     console.print("Warmup done.", style="green")
@@ -117,7 +144,3 @@ def main():
             elif chunk.type == "prefill_end":
                 prefill_time = time.time() - prefill_time
                 generate_time = time.time()
-
-
-if __name__ == "__main__":
-    main()

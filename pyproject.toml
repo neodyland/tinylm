@@ -3,15 +3,46 @@ name = "tinylm"
 version = "0.1.0"
 description = "Transformers but for tinygrad"
 readme = "README.md"
-requires-python = ">=3.13.3"
+requires-python = ">=3.10"
 dependencies = [
-    "huggingface-hub>=0.31.2",
-    "jinja2>=3.1.6",
     "numpy>=2.2.6",
-    "rich>=14.0.0",
     "tinygrad",
+]
+license = { file = "LICENSE" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 3 - Alpha",
+    "Environment :: GPU",
+    "Environment :: MacOS X",
+    "Framework :: FastAPI",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Intended Audience :: Developers",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+cli = [
+    "typer>=0.16.0",
+    "rich>=14.0.0",
+    "tinylm[hf]"
+]
+hf = [
+    "huggingface-hub>=0.32.0",
+    "jinja2>=3.1.6",
     "transformers>=4.52.3",
 ]
+api = [
+    "tinylm[cli]",
+    "fastapi>=0.115.12",
+    "uvicorn>=0.34.2",
+    "openai>=1.82.0",
+    "pydantic>=2.11.5",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/neodyland/tinylm"
+"Bug Tracker" = "https://github.com/neodyland/tinylm/issues"
 
 [tool.uv.sources]
 tinygrad = { git = "https://github.com/tinygrad/tinygrad.git" }
