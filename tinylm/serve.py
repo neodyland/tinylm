@@ -11,11 +11,10 @@ from openai.resources.chat.completions.completions import (
     ChatCompletionMessageParam,
     ChatCompletionChunk,
 )
+from openai.types.completion_usage import CompletionUsage
 from openai.types.chat.chat_completion_chunk import Choice as StreamChoice, ChoiceDelta
 from openai.types.chat.chat_completion import Choice
-from openai.types.chat.chat_completion_assistant_message_param import (
-    ChatCompletionAssistantMessageParam,
-)
+from openai.types.chat.chat_completion_message import ChatCompletionMessage
 import time
 from pydantic import BaseModel
 from typing import Iterable, List
@@ -71,9 +70,10 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
 
     async def generate_stream(
         input_ids: List[int],
-        model: ModelLiteral,
+        model: str,
     ):
         index = 0
+        output_token_count = 0
         for chunk in context.generate(
             input_ids,
             max_new_tokens=context.model.ctx_len // 2,
@@ -81,13 +81,16 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
             data = None
             if chunk.type == "token":
                 data = ChatCompletionChunk(
-                    index=index,
                     created=int(time.time()),
                     choices=[
                         StreamChoice(
                             delta=ChoiceDelta(
                                 role="assistant",
-                                content=tokenizer.decode([chunk.token]),
+                                content=tokenizer.decode(
+                                    [
+                                        chunk.token  # ty: ignore[possibly-unbound-attribute]
+                                    ]
+                                ),
                             ),
                             index=index,
                         )
@@ -96,20 +99,28 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
                     id=generate_cmpl_id(),
                     object="chat.completion.chunk",
                 )
+                output_token_count += 1
             elif chunk.type == "end":
                 data = ChatCompletionChunk(
-                    index=index,
                     created=int(time.time()),
                     choices=[
                         StreamChoice(
                             delta=ChoiceDelta(),
-                            finish_reason="stop" if chunk.reason == "eos" else "length",
+                            finish_reason="stop"
+                            if chunk.reason  # ty: ignore[possibly-unbound-attribute]
+                            == "eos"
+                            else "length",
                             index=index,
                         ),
                     ],
                     model=model,
                     id=generate_cmpl_id(),
                     object="chat.completion.chunk",
+                    usage=CompletionUsage(
+                        prompt_tokens=len(input_ids),
+                        completion_tokens=output_token_count,
+                        total_tokens=len(input_ids) + output_token_count,
+                    ),
                 )
             if data is not None:
                 yield f"data: {data.model_dump_json()}\n\n"
@@ -134,12 +145,14 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
             reason = "max_new_tokens"
             for chunk in context.generate(
                 input_ids,
-                max_new_tokens=model.ctx_len // 2,
+                max_new_tokens=context.model.ctx_len // 2,
             ):
                 if chunk.type == "token":
-                    output_ids.append(chunk.token)
+                    output_ids.append(
+                        chunk.token  # ty: ignore[possibly-unbound-attribute]
+                    )
                 elif chunk.type == "end":
-                    reason = chunk.reason
+                    reason = chunk.reason  # ty: ignore[possibly-unbound-attribute]
             return JSONResponse(
                 content=ChatCompletion(
                     id=generate_cmpl_id(),
@@ -149,13 +162,18 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
                     choices=[
                         Choice(
                             index=0,
-                            message=ChatCompletionAssistantMessageParam(
+                            message=ChatCompletionMessage(
                                 role="assistant",
                                 content=tokenizer.decode(output_ids),
                             ),
                             finish_reason="stop" if reason == "eos" else "length",
                         )
                     ],
+                    usage=CompletionUsage(
+                        prompt_tokens=len(input_ids),
+                        completion_tokens=len(output_ids),
+                        total_tokens=len(input_ids) + len(output_ids),
+                    ),
                 ).to_dict(),
             )
 

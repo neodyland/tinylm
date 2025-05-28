@@ -3,7 +3,7 @@ name = "tinylm"
 version = "0.1.0"
 description = "Transformers but for tinygrad"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.2.6",
     "tinygrad",
@@ -41,8 +41,8 @@ api = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/neodyland/tinylm"
-"Bug Tracker" = "https://github.com/neodyland/tinylm/issues"
+homepage = "https://github.com/neodyland/tinylm"
+issues = "https://github.com/neodyland/tinylm/issues"
 
 [tool.uv.sources]
 tinygrad = { git = "https://github.com/tinygrad/tinygrad.git" }

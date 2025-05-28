@@ -16,7 +16,7 @@ from typing import List, Optional, Tuple
 
 
 class Llama3RotaryEmbedding:
-    def __init__(self, rope_theta: int, head_dim: int, ctx_len: int):
+    def __init__(self, rope_theta: float, head_dim: int, ctx_len: int):
         inv_freq = llama_init_rope(rope_theta, head_dim)
         # TODO: I don't know how llama3's rope works.
         emb = llama_precompute_rope(inv_freq, ctx_len)
@@ -38,7 +38,7 @@ class Llama3Model:
         kv_heads: int,
         head_dim: int,
         vocab_size: int,
-        rope_theta: int,
+        rope_theta: float,
         att_heads: int,
         ctx_len: int,
     ):
@@ -88,7 +88,7 @@ class Llama3ModelForCasualLM(
         kv_heads: int,
         head_dim: int,
         vocab_size: int,
-        rope_theta: int,
+        rope_theta: float,
         att_heads: int,
         ctx_len: int,
     ):

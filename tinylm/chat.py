@@ -22,7 +22,7 @@ def model_factory(model: ModelLiteral):
             kv_heads=8,
             head_dim=64,
             vocab_size=128256,
-            rope_theta=500000.0,
+            rope_theta=500000,
             att_heads=32,
             ctx_len=8192,
         )
@@ -72,7 +72,7 @@ def load_model(
         model,
         batch_size=1,
         prefill_chunk_size=256,
-        dtype=state_dict["model.embed_tokens.weight"].dtype,
+        dtype=dtype,
         pad_token_id=tokenizer.pad_token_id,
         eos_token_id=tokenizer.eos_token_id,
         temperature=0.6,
@@ -118,10 +118,10 @@ def chat_main(model: ModelLiteral, dtype: DType):
         generate_time = -1
         for chunk in context.generate(
             input_ids,
-            max_new_tokens=model.ctx_len // 2,
+            max_new_tokens=context.model.ctx_len // 2,
         ):
             if chunk.type == "token":
-                outputs.append(chunk.token)
+                outputs.append(chunk.token)  # ty: ignore[possibly-unbound-attribute]
                 live.update(styled_markdown(tokenizer.decode(outputs)), refresh=True)
             elif chunk.type == "end":
                 live.stop()
@@ -140,7 +140,9 @@ def chat_main(model: ModelLiteral, dtype: DType):
                 )
             elif chunk.type == "prefill_start":
                 prefill_time = time.time()
-                prefill_tokens = chunk.prefill_tokens
+                prefill_tokens = (
+                    chunk.prefill_tokens  # ty: ignore[possibly-unbound-attribute]
+                )
             elif chunk.type == "prefill_end":
                 prefill_time = time.time() - prefill_time
                 generate_time = time.time()
