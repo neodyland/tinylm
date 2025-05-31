@@ -3,12 +3,10 @@
 # Qwen3-0.6Bを実行します。
 # 最大まで最適化された状態で実行します。コンパイルには数分から数十分かかります。
 # ソースコードの変更がなければ、一度コンパイルすれば二度目以降は比較的高速になります。
-CUDA=1 BEAM=2 uv run main_qwen3.py
+CUDA=1 BEAM=2 uv run python -m tinylm chat unsloth/Qwen3-0.6B --dtype bfloat16
 
-# Llama3.2-1B-instructを実行します。
-# ぱっと見それっぽく動いていますが、実際のところropeあたりの実装がおかしいはずです。
-# 動くには動きます。
-CUDA=1 BEAM=2 uv run main_llama3.py
+# llm-jp/llm-jp-3.1-1.8b-instruct4を実行します。
+CUDA=1 BEAM=2 uv run python -m tinylm chat llm-jp/llm-jp-3.1-1.8b-instruct4 --dtype bfloat16
 
 # tinygradで使用可能なバックエンドを表示します。
 uv run python -m tinygrad.device
