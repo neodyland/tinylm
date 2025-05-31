@@ -81,7 +81,9 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
         ):
             data = None
             if chunk.type == "token":
-                generated_tokens.append(chunk.token)
+                generated_tokens.append(
+                    chunk.token  # ty: ignore[possibly-unbound-attribute]
+                )
                 decoded = tokenizer.decode(generated_tokens)
                 not_sent_chunks = decoded[len(sent_chunks) :]
                 should_send_tokens = None
