@@ -73,13 +73,43 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
         model: str,
     ):
         index = 0
-        output_token_count = 0
+        generated_tokens = []
+        sent_chunks = ""
         for chunk in context.generate(
             input_ids,
             max_new_tokens=context.model.ctx_len // 2,
         ):
             data = None
             if chunk.type == "token":
+                generated_tokens.append(chunk.token)
+                decoded = tokenizer.decode(generated_tokens)
+                not_sent_chunks = decoded[len(sent_chunks) :]
+                should_send_tokens = None
+                if "\n" in not_sent_chunks:
+                    should_send_tokens = "\n".join(not_sent_chunks.split("\n")[:-1])
+                if " " in not_sent_chunks:
+                    should_send_tokens = " ".join(not_sent_chunks.split(" ")[:-1])
+                if "　" in not_sent_chunks:
+                    should_send_tokens = "　".join(not_sent_chunks.split("　")[:-1])
+                if should_send_tokens is not None:
+                    sent_chunks += should_send_tokens
+                    data = ChatCompletionChunk(
+                        created=int(time.time()),
+                        choices=[
+                            StreamChoice(
+                                delta=ChoiceDelta(
+                                    role="assistant",
+                                    content=should_send_tokens,
+                                ),
+                                index=index,
+                            )
+                        ],
+                        model=model,
+                        id=generate_cmpl_id(),
+                        object="chat.completion.chunk",
+                    )
+                    index += 1
+            elif chunk.type == "end":
                 data = ChatCompletionChunk(
                     created=int(time.time()),
                     choices=[
@@ -87,25 +117,9 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
                             delta=ChoiceDelta(
                                 role="assistant",
                                 content=tokenizer.decode(
-                                    [
-                                        chunk.token  # ty: ignore[possibly-unbound-attribute]
-                                    ]
-                                ),
+                                    generated_tokens,
+                                )[len(sent_chunks) :],
                             ),
-                            index=index,
-                        )
-                    ],
-                    model=model,
-                    id=generate_cmpl_id(),
-                    object="chat.completion.chunk",
-                )
-                output_token_count += 1
-            elif chunk.type == "end":
-                data = ChatCompletionChunk(
-                    created=int(time.time()),
-                    choices=[
-                        StreamChoice(
-                            delta=ChoiceDelta(),
                             finish_reason="stop"
                             if chunk.reason  # ty: ignore[possibly-unbound-attribute]
                             == "eos"
@@ -118,13 +132,12 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
                     object="chat.completion.chunk",
                     usage=CompletionUsage(
                         prompt_tokens=len(input_ids),
-                        completion_tokens=output_token_count,
-                        total_tokens=len(input_ids) + output_token_count,
+                        completion_tokens=len(generated_tokens),
+                        total_tokens=len(input_ids) + len(generated_tokens),
                     ),
                 )
             if data is not None:
                 yield f"data: {data.model_dump_json()}\n\n"
-            index += 1
 
     async def ep_chat_completions_inner(req: ChatCompletionRequest):
         input_ids = tokenizer(

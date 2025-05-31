@@ -1,7 +1,7 @@
 from tinygrad import Tensor, nn, Device
 from tinygrad.tensor import DType
 from transformers import AutoTokenizer
-from typing import Any, Dict, Tuple
+from typing import Dict, Tuple
 from huggingface_hub import hf_hub_download
 import time
 from rich.console import Console
@@ -13,6 +13,7 @@ from tinylm.llms.llama.generation_context import LlamaGenerationContext
 from tinylm.clidefs import ModelLiteral
 from tinylm.remote_chat import styled_markdown
 from tinylm.llms.abstract.tokenizer import AbstractTokenizerForInference
+from tinylm.llms.abstract.generation_config import AbstractGenerationConfig
 
 
 def model_factory(model: ModelLiteral):
@@ -70,6 +71,13 @@ def load_model(
 ) -> Tuple[AbstractTokenizerForInference, LlamaGenerationContext]:
     tokenizer: AbstractTokenizerForInference = AutoTokenizer.from_pretrained(model)
     path = hf_hub_download(model, "model.safetensors")
+    try:
+        generation_config_path = hf_hub_download(model, "generation_config.json")
+        generation_config = AbstractGenerationConfig.model_validate_json(
+            open(generation_config_path, "r").read()
+        )
+    except Exception:
+        generation_config = AbstractGenerationConfig()
     model = model_factory(model)
     state_dict = nn.state.safe_load(path)
     state_dict = state_dict_to_dtype(state_dict, dtype=dtype)
@@ -88,11 +96,11 @@ def load_model(
         batch_size=1,
         prefill_chunk_size=256,
         dtype=dtype,
-        pad_token_id=tokenizer.pad_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-        temperature=0.6,
-        top_p=0.8,
-        top_k=20,
+        pad_token_id=generation_config.pad_token_id or tokenizer.pad_token_id,
+        eos_token_id=generation_config.eos_token_id or tokenizer.eos_token_id,
+        temperature=generation_config.temperature,
+        top_p=generation_config.top_p,
+        top_k=generation_config.top_k,
     )
     return tokenizer, context
 

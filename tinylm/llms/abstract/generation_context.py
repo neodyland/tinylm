@@ -52,7 +52,7 @@ class LlamaAbstractGenerationContext:
         prefill_chunk_size: int,
         dtype: DType,
         pad_token_id: int,
-        eos_token_id: int,
+        eos_token_id: Union[int, List[int]],
         temperature: float,
         top_p: float,
         top_k: int,
@@ -86,6 +86,11 @@ class LlamaAbstractGenerationContext:
             self.top_k,
         )
         x.realize()
+
+    def is_eos(self, token: int) -> bool:
+        if isinstance(self.eos_token_id, list):
+            return token in self.eos_token_id
+        return token == self.eos_token_id
 
     def generate(
         self,
@@ -126,7 +131,7 @@ class LlamaAbstractGenerationContext:
                 self.top_k,
             )
             next_token = x.numpy()[0].item()
-            if next_token == self.eos_token_id:
+            if self.is_eos(next_token):
                 reason = "eos"
                 break
             input_ids.append(next_token)

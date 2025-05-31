@@ -20,7 +20,7 @@ def llama_logits_sample(
         Tensor.arange(t.numel() - 1, -1, -1, device=logits.device).contiguous(),
     )
 
-    if top_k:
+    if top_k > 0:
         output, output_indices = (
             Tensor.zeros(top_k, device=logits.device).contiguous(),
             Tensor.zeros(top_k, device=logits.device, dtype=dtypes.int32).contiguous(),
