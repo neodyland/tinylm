@@ -6,11 +6,13 @@ from huggingface_hub import hf_hub_download
 import time
 from rich.console import Console
 from rich.live import Live
-from tinylm.models.llama3.model import Llama3ModelForCasualLM
-from tinylm.models.qwen3.model import Qwen3ModelForCasualLM
-from tinylm.models.llama.generation_context import LlamaGenerationContext
+from tinylm.llms.llama3.model import Llama3ModelForCasualLM
+from tinylm.llms.llama.model import LlamaModelForCasualLM
+from tinylm.llms.qwen3.model import Qwen3ModelForCasualLM
+from tinylm.llms.llama.generation_context import LlamaGenerationContext
 from tinylm.clidefs import ModelLiteral
 from tinylm.remote_chat import styled_markdown
+from tinylm.llms.abstract.tokenizer import AbstractTokenizerForInference
 
 
 def model_factory(model: ModelLiteral):
@@ -38,6 +40,18 @@ def model_factory(model: ModelLiteral):
             att_heads=16,
             ctx_len=40960,
         )
+    elif model == "llm-jp/llm-jp-3.1-1.8b-instruct4":
+        return LlamaModelForCasualLM(
+            num_layers=24,
+            dim=2048,
+            ffn_dim=7168,
+            kv_heads=16,
+            head_dim=128,
+            vocab_size=99584,
+            rope_theta=10000,
+            att_heads=16,
+            ctx_len=4096,
+        )
 
 
 def state_dict_to_dtype(
@@ -53,15 +67,16 @@ def load_model(
     console: Console,
     model: ModelLiteral,
     dtype: DType,
-) -> Tuple[Any, LlamaGenerationContext]:
-    tokenizer: Any = AutoTokenizer.from_pretrained(model)
+) -> Tuple[AbstractTokenizerForInference, LlamaGenerationContext]:
+    tokenizer: AbstractTokenizerForInference = AutoTokenizer.from_pretrained(model)
     path = hf_hub_download(model, "model.safetensors")
     model = model_factory(model)
     state_dict = nn.state.safe_load(path)
     state_dict = state_dict_to_dtype(state_dict, dtype=dtype)
     state_dict["model.rotary_emb.sin"] = model.model.rotary_emb.sin
     state_dict["model.rotary_emb.cos"] = model.model.rotary_emb.cos
-    state_dict["lm_head.weight"] = state_dict["model.embed_tokens.weight"]
+    if "lm_head.weight" not in state_dict:
+        state_dict["lm_head.weight"] = state_dict["model.embed_tokens.weight"]
     nn.state.load_state_dict(model, state_dict)
     total_params = sum(param.numel() for param in nn.state.get_parameters(model))
     console = Console()

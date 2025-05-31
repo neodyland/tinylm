@@ -6,9 +6,14 @@ from typing import Literal
 class Model(str, Enum):
     UNSLOTH_Llama_3_2_1B_Instruct = "unsloth/Llama-3.2-1B-Instruct"
     UNSLOTH_Qwen3_0_6B = "unsloth/Qwen3-0.6B"
+    LLM_JP_llm_jp_3_1_1_8b_instruct4 = "llm-jp/llm-jp-3.1-1.8b-instruct4"
 
 
-type ModelLiteral = Literal["unsloth/Llama-3.2-1B-Instruct", "unsloth/Qwen3-0.6B"]
+type ModelLiteral = Literal[
+    "unsloth/Llama-3.2-1B-Instruct",
+    "unsloth/Qwen3-0.6B",
+    "llm-jp/llm-jp-3.1-1.8b-instruct4",
+]
 
 
 class CliDType(str, Enum):

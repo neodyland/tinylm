@@ -7,4 +7,4 @@ COPY pyproject.toml ./
 COPY uv.lock ./
 RUN uv sync --no-dev --all-extras --frozen --no-cache
 COPY . .
-ENTRYPOINT ["uv", "run", "python", "-m", "tinylm"]
+ENTRYPOINT ["uv", "run", "--no-dev", "python", "-m", "tinylm"]

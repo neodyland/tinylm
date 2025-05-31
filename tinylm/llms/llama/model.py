@@ -1,22 +1,142 @@
-from ..llama.model import (
-    LlamaRMSNorm,
-    LlamaSiluMLP,
-    llama_apply_rotary_pos_emb,
-    llama_attention,
-    llama_compute_attention_mask,
-    LlamaRotaryEmbedding,
-)
-from ..llama.sample import llama_logits_sample
-from ..llama.cache import LlamaAbstractKvCache
+from tinygrad import Tensor, dtypes, nn, TinyJit
+from tinygrad.tensor import DType
+from typing import Tuple, Optional, List
+from .cache import LlamaAbstractKvCache
+from .sample import llama_logits_sample
 from ..abstract.causal_lm import (
     LlamaAbstractCausalLMForInference,
     LlamaAbstractCausalLMForTraining,
 )
-from tinygrad import nn, Tensor, TinyJit
-from typing import List, Optional, Tuple
 
 
-class Qwen3Attention:
+class LlamaRMSNorm:
+    def __init__(self, dim: int, eps=1e-6):
+        self.eps = eps
+        self.weight = Tensor.ones(dim)
+
+    def __call__(self, x: Tensor) -> Tensor:
+        input_dtype = x.dtype
+        x = x.cast(dtypes.float)
+        variance = x.pow(2).mean(-1, keepdim=True)
+        x = x * (variance + self.eps).rsqrt()
+        return self.weight * x.cast(input_dtype)
+
+
+class LlamaSiluMLP:
+    def __init__(self, dim: int, ffn_dim: int):
+        self.gate_proj = nn.Linear(dim, ffn_dim, bias=False)
+        self.up_proj = nn.Linear(dim, ffn_dim, bias=False)
+        self.down_proj = nn.Linear(ffn_dim, dim, bias=False)
+
+    def __call__(self, x: Tensor) -> Tensor:
+        down_proj = self.down_proj(self.gate_proj(x).silu() * self.up_proj(x))
+        return down_proj
+
+
+def llama_rotate_half(x: Tensor):
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return Tensor.cat(-x2, x1, dim=-1)
+
+
+def llama_apply_rotary_pos_emb(
+    q: Tensor, k: Tensor, cos: Tensor, sin: Tensor, unsqueeze_dim=1
+):
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (llama_rotate_half(q) * sin)
+    k_embed = (k * cos) + (llama_rotate_half(k) * sin)
+    return q_embed, k_embed
+
+
+def llama_init_rope(rope_theta: float, head_dim: int):
+    inv_freq = 1.0 / (
+        rope_theta
+        ** (
+            Tensor.arange(0, head_dim, 2, dtype=dtypes.int64).cast(dtypes.float)
+            / head_dim
+        )
+    )
+    return inv_freq
+
+
+def llama_precompute_rope(inv_freq: Tensor, ctx_len: int):
+    position_ids = (
+        Tensor.arange(ctx_len, dtype=dtypes.int64).cast(dtypes.float).unsqueeze(0)
+    )
+    inv_freq_expanded = (
+        inv_freq[None, :, None].cast(dtypes.float).expand(position_ids.shape[0], -1, 1)
+    )
+    position_ids_expanded = position_ids[:, None, :].cast(dtypes.float)
+    freqs = (
+        inv_freq_expanded.cast(dtypes.float) @ position_ids_expanded.cast(dtypes.float)
+    ).transpose(1, 2)
+    emb = Tensor.cat(freqs, freqs, dim=-1)
+    return emb
+
+
+class LlamaRotaryEmbedding:
+    def __init__(self, rope_theta: int, head_dim: int, ctx_len: int):
+        inv_freq = llama_init_rope(rope_theta, head_dim)
+        emb = llama_precompute_rope(inv_freq, ctx_len)
+        self.cos = emb.cos()
+        self.sin = emb.sin()
+
+    def __call__(self, x: Tensor, pos_x: int, pos_y: int) -> Tuple[Tensor, Tensor]:
+        return self.cos[:, pos_x:pos_y].cast(x.dtype), self.sin[:, pos_x:pos_y].cast(
+            x.dtype
+        )
+
+
+def llama_repeat_kv(hidden_states: Tensor, n_rep: int) -> Tensor:
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    if n_rep == 1:
+        return hidden_states
+    hidden_states = hidden_states.unsqueeze(2).expand(
+        batch, num_key_value_heads, n_rep, slen, head_dim
+    )
+    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+
+
+def llama_attention(
+    key_states: Tensor,
+    value_states: Tensor,
+    query_states: Tensor,
+    n_rep: int,
+    scaling: float,
+    attention_mask: Optional[Tensor],
+) -> Tensor:
+    key_states = llama_repeat_kv(key_states, n_rep)
+    value_states = llama_repeat_kv(value_states, n_rep)
+    attn_weights = (query_states @ key_states.transpose(2, 3)) * scaling
+    if attention_mask is not None:
+        attn_weights = attn_weights + attention_mask
+
+    attn_weights = attn_weights.softmax(axis=-1, dtype=dtypes.float).cast(
+        query_states.dtype
+    )
+    attn_output = attn_weights @ value_states
+    attn_output = attn_output.transpose(1, 2).contiguous()
+    return attn_output
+
+
+def llama_compute_attention_mask(
+    dtype: DType,
+    source_length: int,
+    target_length: int,
+    position_ids: Tensor,
+    batch_size: int,
+) -> Tensor:
+    causal_mask = Tensor.full(
+        (source_length, target_length), fill_value=-100, dtype=dtype
+    )
+    diagonal_attend_mask = Tensor.arange(0, target_length) > position_ids.reshape(-1, 1)
+    causal_mask *= diagonal_attend_mask
+    causal_mask = causal_mask.unsqueeze(0).unsqueeze(0).expand(batch_size, 1, -1, -1)
+    return causal_mask
+
+
+class LlamaAttention:
     def __init__(
         self,
         dim: int,
@@ -28,8 +148,6 @@ class Qwen3Attention:
         self.k_proj = nn.Linear(dim, kv_heads * head_dim, bias=False)
         self.v_proj = nn.Linear(dim, kv_heads * head_dim, bias=False)
         self.o_proj = nn.Linear(att_heads * head_dim, dim, bias=False)
-        self.q_norm = LlamaRMSNorm(head_dim)
-        self.k_norm = LlamaRMSNorm(head_dim)
         self.att_heads = att_heads
         self.head_dim = head_dim
         self.kv_heads = kv_heads
@@ -46,8 +164,8 @@ class Qwen3Attention:
         input_shape = x.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
-        query_states = self.q_norm(self.q_proj(x).view(hidden_shape)).transpose(1, 2)
-        key_states = self.k_norm(self.k_proj(x).view(hidden_shape)).transpose(1, 2)
+        query_states = self.q_proj(x).view(hidden_shape).transpose(1, 2)
+        key_states = self.k_proj(x).view(hidden_shape).transpose(1, 2)
         value_states = self.v_proj(x).view(hidden_shape).transpose(1, 2)
         query_states, key_states = llama_apply_rotary_pos_emb(
             query_states, key_states, position_embeddings[0], position_embeddings[1]
@@ -71,7 +189,7 @@ class Qwen3Attention:
         return attn_output, kv_cache
 
 
-class Qwen3Block:
+class LlamaBlock:
     def __init__(
         self,
         dim: int,
@@ -80,7 +198,7 @@ class Qwen3Block:
         ffn_dim: int,
         att_heads: int,
     ):
-        self.self_attn = Qwen3Attention(dim, kv_heads, head_dim, att_heads)
+        self.self_attn = LlamaAttention(dim, kv_heads, head_dim, att_heads)
         self.mlp = LlamaSiluMLP(dim, ffn_dim)
         self.input_layernorm = LlamaRMSNorm(dim)
         self.post_attention_layernorm = LlamaRMSNorm(dim)
@@ -110,7 +228,7 @@ class Qwen3Block:
         return x, kv_cache
 
 
-class Qwen3Model:
+class LlamaModel:
     def __init__(
         self,
         num_layers: int,
@@ -126,7 +244,7 @@ class Qwen3Model:
         self.embed_tokens = nn.Embedding(vocab_size, dim)
         self.rotary_emb = LlamaRotaryEmbedding(rope_theta, head_dim, ctx_len)
         self.layers = [
-            Qwen3Block(dim, kv_heads, head_dim, ffn_dim, att_heads)
+            LlamaBlock(dim, kv_heads, head_dim, ffn_dim, att_heads)
             for _ in range(num_layers)
         ]
         self.norm = LlamaRMSNorm(dim)
@@ -158,7 +276,7 @@ class Qwen3Model:
         return x, updated_kv_caches
 
 
-class Qwen3ModelForCasualLM(
+class LlamaModelForCasualLM(
     LlamaAbstractCausalLMForInference, LlamaAbstractCausalLMForTraining
 ):
     def __init__(
@@ -175,7 +293,7 @@ class Qwen3ModelForCasualLM(
     ):
         self.ctx_len = ctx_len
         self.num_layers = num_layers
-        self.model = Qwen3Model(
+        self.model = LlamaModel(
             num_layers,
             dim,
             ffn_dim,
@@ -193,12 +311,11 @@ class Qwen3ModelForCasualLM(
     def __call__(
         self,
         x: Tensor,
-        y: Tensor,
     ) -> Tensor:
         real_len = x.shape[1]
-        x = self.model(x, real_len, [None for _ in self.model.layers])
+        x, _ = self.model(x, real_len, [None for _ in self.model.layers])
         x = self.lm_head(x)
-        return x.cross_entropy(y)
+        return x
 
     @TinyJit
     def inference(
@@ -209,10 +326,10 @@ class Qwen3ModelForCasualLM(
         temperature: float,
         top_p: float,
         top_k: int,
-    ) -> Tuple[Tensor, List[Optional[LlamaAbstractKvCache]]]:
+    ) -> Tuple[Tensor, Tensor, List[Optional[LlamaAbstractKvCache]]]:
         x, kv_caches = self.model(x, real_len, kv_caches)
         x = self.lm_head(x[:, -1, :])
-        return llama_logits_sample(x, temperature, top_p, top_k), kv_caches
+        return llama_logits_sample(x, temperature, top_p, top_k), x, kv_caches
 
     @TinyJit
     def prefill(

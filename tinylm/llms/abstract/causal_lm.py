@@ -20,10 +20,10 @@ class LlamaAbstractCausalLMForInference:
         temperature: float,
         top_p: float,
         top_k: int,
-    ) -> Tuple[Tensor, List[Optional[LlamaAbstractKvCache]]]:
+    ) -> Tuple[Tensor, Tensor, List[Optional[LlamaAbstractKvCache]]]:
         raise NotImplementedError("This method should be implemented by subclasses.")
 
 
 class LlamaAbstractCausalLMForTraining:
-    def __call__(self, x: Tensor, y: Tensor) -> Tensor:
+    def __call__(self, x: Tensor) -> Tensor:
         raise NotImplementedError("This method should be implemented by subclasses.")

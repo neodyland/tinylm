@@ -112,12 +112,11 @@ class Llama3ModelForCasualLM(
     def __call__(
         self,
         x: Tensor,
-        y: Tensor,
     ) -> Tensor:
         real_len = x.shape[1]
-        x = self.model(x, real_len, [None for _ in self.model.layers])
+        x, _ = self.model(x, real_len, [None for _ in self.model.layers])
         x = self.lm_head(x)
-        return x.cross_entropy(y)
+        return x
 
     @TinyJit
     def inference(
@@ -128,10 +127,10 @@ class Llama3ModelForCasualLM(
         temperature: float,
         top_p: float,
         top_k: int,
-    ) -> Tuple[Tensor, List[Optional[LlamaAbstractKvCache]]]:
+    ) -> Tuple[Tensor, Tensor, List[Optional[LlamaAbstractKvCache]]]:
         x, kv_caches = self.model(x, real_len, kv_caches)
         x = self.lm_head(x[:, -1, :])
-        return llama_logits_sample(x, temperature, top_p, top_k), kv_caches
+        return llama_logits_sample(x, temperature, top_p, top_k), x, kv_caches
 
     @TinyJit
     def prefill(
