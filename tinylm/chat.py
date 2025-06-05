@@ -105,7 +105,6 @@ def load_model(
     return tokenizer, context
 
 
-@Tensor.test()
 def chat_main(model: ModelLiteral, dtype: DType):
     console = Console()
     tokenizer, context = load_model(console, model, dtype)
