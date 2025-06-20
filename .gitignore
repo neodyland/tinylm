@@ -5,4 +5,4 @@ dist/
 wheels/
 *.egg-info
 .venv
-*.ruff*
+*.*_cache*

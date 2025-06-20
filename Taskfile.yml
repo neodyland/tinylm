@@ -1,0 +1,13 @@
+version: '3'
+
+tasks:
+  test:
+    cmds:
+      - uv run pytest -n auto
+  install:
+    cmds:
+      - uv sync --all-extras
+  check:
+    cmds:
+      - uv run ruff format
+      - uv run ty check

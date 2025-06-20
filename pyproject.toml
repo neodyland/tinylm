@@ -3,7 +3,7 @@ name = "tinylm"
 version = "0.1.0"
 description = "Transformers but for tinygrad"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "numpy>=2.2.6",
     "tinygrad",
@@ -38,6 +38,22 @@ api = [
     "uvicorn>=0.34.2",
     "openai>=1.82.0",
     "pydantic>=2.11.5",
+]
+audio = [
+    "pydub>=0.25.1",
+    "audioop-lts>=0.2.1",
+]
+all = [
+    "tinylm[cli]",
+    "tinylm[hf]",
+    "tinylm[api]",
+    "tinylm[audio]",
+]
+test = [
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
+    "pytest>=8.4.1",
+    "pytest-xdist>=3.7.0",
 ]
 
 [project.urls]
