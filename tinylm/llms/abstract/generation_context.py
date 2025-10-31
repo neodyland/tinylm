@@ -16,7 +16,6 @@ class LlamaGenerationChunkFinal:
 class LlamaGenerationChunkToken:
     token: int
     type: Literal["token"] = "token"
-    logits: Optional[List[float]] = None
 
 
 @dataclass
@@ -74,12 +73,12 @@ class LlamaAbstractGenerationContext:
     def warmup(self):
         prefill_times = 4  # just a magic number for now
         for _ in range(prefill_times):
-            _, self.kv_caches = self.model.prefill(
+            _ = self.model.prefill(
                 Tensor([0] * self.prefill_chunk_size, dtype=dtypes.int64).unsqueeze(0),
                 self.len_var.bind(self.prefill_chunk_size),
                 self.kv_caches,
             )
-            x, logits, self.kv_caches = self.model.inference(
+            _ = self.model.inference(
                 Tensor([0], dtype=dtypes.int64).unsqueeze(0),
                 self.len_var.bind(self.model.ctx_len // 2),
                 self.kv_caches,
@@ -87,7 +86,6 @@ class LlamaAbstractGenerationContext:
                 self.top_p,
                 self.top_k,
             )
-        x.realize()
 
     def is_eos(self, token: int) -> bool:
         if isinstance(self.eos_token_id, list):
@@ -98,7 +96,6 @@ class LlamaAbstractGenerationContext:
         self,
         input_ids: List[int],
         max_new_tokens: int,
-        output_logits: bool = False,
     ) -> Generator[LlamaGenerationChunk, None, None]:
         if len(input_ids) + max_new_tokens > self.model.ctx_len:
             raise ValueError(
@@ -114,19 +111,18 @@ class LlamaAbstractGenerationContext:
             if len(chunk) < self.prefill_chunk_size:
                 chunk += [self.pad_token_id] * (self.prefill_chunk_size - len(chunk))
             tensor = Tensor(chunk, dtype=dtypes.int64, requires_grad=False).unsqueeze(0)
-            x, self.kv_caches = self.model.prefill(
+            _ = self.model.prefill(
                 tensor,
                 self.len_var.bind(i + self.prefill_chunk_size),
                 self.kv_caches,
             )
-            x.realize()
         yield LlamaGenerationChunkPrefillEnd()
         reason = "max_new_tokens"
         for _ in range(max_new_tokens):
             tensor = Tensor(
                 [input_ids[-1]], dtype=dtypes.int64, requires_grad=False
             ).unsqueeze(0)
-            x, logits, self.kv_caches = self.model.inference(
+            x = self.model.inference(
                 tensor,
                 self.len_var.bind(len(input_ids)),
                 self.kv_caches,
@@ -134,13 +130,12 @@ class LlamaAbstractGenerationContext:
                 self.top_p,
                 self.top_k,
             )
-            next_token = x.numpy()[0].item()
+            next_token = x[0].item()
             if self.is_eos(next_token):
                 reason = "eos"
                 break
             input_ids.append(next_token)
             yield LlamaGenerationChunkToken(
                 token=next_token,
-                logits=logits.numpy()[0].tolist() if output_logits else None,
             )
         yield LlamaGenerationChunkFinal(reason=reason)

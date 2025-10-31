@@ -61,7 +61,7 @@ homepage = "https://github.com/neodyland/tinylm"
 issues = "https://github.com/neodyland/tinylm/issues"
 
 [tool.uv.sources]
-tinygrad = { git = "https://github.com/tinygrad/tinygrad.git" }
+tinygrad = { git = "https://github.com/tinygrad/tinygrad" }
 
 [dependency-groups]
 dev = [

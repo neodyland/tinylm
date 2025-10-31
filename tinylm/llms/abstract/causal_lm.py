@@ -9,7 +9,7 @@ class LlamaAbstractCausalLMForInference:
 
     def prefill(
         self, x: Tensor, real_len: int, kv_caches: List[Optional[LlamaAbstractKvCache]]
-    ) -> Tuple[Tensor, List[Optional[LlamaAbstractKvCache]]]:
+    ) -> Tensor:
         raise NotImplementedError("This method should be implemented by subclasses.")
 
     def inference(
@@ -20,7 +20,7 @@ class LlamaAbstractCausalLMForInference:
         temperature: float,
         top_p: float,
         top_k: int,
-    ) -> Tuple[Tensor, Tensor, List[Optional[LlamaAbstractKvCache]]]:
+    ) -> Tensor:
         raise NotImplementedError("This method should be implemented by subclasses.")
 
 

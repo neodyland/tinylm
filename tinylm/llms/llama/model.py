@@ -160,7 +160,7 @@ class LlamaAttention:
         attention_mask: Optional[Tensor],
         real_len: int,
         kv_cache: Optional[LlamaAbstractKvCache],
-    ) -> Tuple[Tensor, Optional[LlamaAbstractKvCache]]:
+    ) -> Tensor:
         input_shape = x.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
@@ -186,7 +186,7 @@ class LlamaAttention:
 
         attn_output = attn_output.reshape(*input_shape, -1).contiguous()
         attn_output = self.o_proj(attn_output)
-        return attn_output, kv_cache
+        return attn_output
 
 
 class LlamaBlock:
@@ -210,10 +210,10 @@ class LlamaBlock:
         attention_mask: Optional[Tensor],
         real_len: int,
         kv_cache: Optional[LlamaAbstractKvCache] = None,
-    ) -> Tuple[Tensor, Optional[LlamaAbstractKvCache]]:
+    ) -> Tensor:
         residual = x
         x = self.input_layernorm(x)
-        x, kv_cache = self.self_attn(
+        x = self.self_attn(
             x,
             position_embeddings,
             attention_mask,
@@ -225,7 +225,7 @@ class LlamaBlock:
         x = self.post_attention_layernorm(x)
         x = self.mlp(x)
         x = residual + x
-        return x, kv_cache
+        return x
 
 
 class LlamaModel:
@@ -254,7 +254,7 @@ class LlamaModel:
         x: Tensor,
         real_len: int,
         kv_caches: List[Optional[LlamaAbstractKvCache]],
-    ) -> Tuple[Tensor, List[Optional[LlamaAbstractKvCache]]]:
+    ) -> Tensor:
         x = self.embed_tokens(x)
         pos_x, pos_y = (real_len - x.shape[1], real_len)
         position_ids = Tensor.arange(pos_x, pos_y)
@@ -266,14 +266,12 @@ class LlamaModel:
             x.shape[0],
         )
         position_embeddings = self.rotary_emb(x, pos_x, pos_y)
-        updated_kv_caches = []
         for layer, kv_cache in zip(self.layers, kv_caches):
-            x, kv_cache = layer(
+            x = layer(
                 x, position_embeddings, attention_mask, real_len, kv_cache
             )
-            updated_kv_caches.append(kv_cache)
         x = self.norm(x)
-        return x, updated_kv_caches
+        return x
 
 
 class LlamaModelForCasualLM(
@@ -326,14 +324,14 @@ class LlamaModelForCasualLM(
         temperature: float,
         top_p: float,
         top_k: int,
-    ) -> Tuple[Tensor, Tensor, List[Optional[LlamaAbstractKvCache]]]:
-        x, kv_caches = self.model(x, real_len, kv_caches)
+    ) -> Tensor:
+        x = self.model(x, real_len, kv_caches)
         x = self.lm_head(x[:, -1, :])
-        return llama_logits_sample(x, temperature, top_p, top_k), x, kv_caches
+        return llama_logits_sample(x, temperature, top_p, top_k).realize()
 
     @TinyJit
     def prefill(
         self, x: Tensor, real_len: int, kv_caches: List[Optional[LlamaAbstractKvCache]]
-    ) -> Tuple[Tensor, List[Optional[LlamaAbstractKvCache]]]:
-        x, kv_caches = self.model(x, real_len, kv_caches)
-        return x, kv_caches
+    ) -> Tensor:
+        x = self.model(x, real_len, kv_caches)
+        return x.realize()
