@@ -76,8 +76,7 @@ def serve_main(model: ModelLiteral, dtype: DType, host: str, port: int):
         generated_tokens = []
         sent_chunks = ""
         for chunk in context.generate(
-            input_ids,
-            max_new_tokens=context.model.ctx_len // 2,
+            input_ids, max_new_tokens=context.model.ctx_len // 2
         ):
             data = None
             if chunk.type == "token":

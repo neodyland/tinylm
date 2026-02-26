@@ -3,68 +3,70 @@ name = "tinylm"
 version = "0.1.0"
 description = "Transformers but for tinygrad"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
-    "numpy>=2.2.6",
-    "tinygrad",
+  "numpy>=2.2.6",
+  "tinygrad",
 ]
 license = { file = "LICENSE" }
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Development Status :: 3 - Alpha",
-    "Environment :: GPU",
-    "Environment :: MacOS X",
-    "Framework :: FastAPI",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Intended Audience :: Developers",
-    "Typing :: Typed",
-]
-
-[project.optional-dependencies]
-cli = [
-    "typer>=0.16.0",
-    "rich>=14.0.0",
-    "tinylm[hf]"
-]
-hf = [
-    "huggingface-hub>=0.32.0",
-    "jinja2>=3.1.6",
-    "transformers>=4.52.3",
-]
-api = [
-    "tinylm[cli]",
-    "fastapi>=0.115.12",
-    "uvicorn>=0.34.2",
-    "openai>=1.82.0",
-    "pydantic>=2.11.5",
-]
-audio = [
-    "pydub>=0.25.1",
-    "audioop-lts>=0.2.1",
-]
-all = [
-    "tinylm[cli]",
-    "tinylm[hf]",
-    "tinylm[api]",
-    "tinylm[audio]",
-]
-test = [
-    "torch>=2.7.1",
-    "torchaudio>=2.7.1",
-    "pytest>=8.4.1",
-    "pytest-xdist>=3.7.0",
+  "Development Status :: 3 - Alpha",
+  "Environment :: GPU",
+  "Environment :: MacOS X",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
 ]
 
 [project.urls]
 homepage = "https://github.com/neodyland/tinylm"
 issues = "https://github.com/neodyland/tinylm/issues"
 
-[tool.uv.sources]
-tinygrad = { git = "https://github.com/tinygrad/tinygrad" }
+[project.optional-dependencies]
+all = [
+  "tinylm[cli]",
+  "tinylm[hf]",
+  "tinylm[api]",
+  "tinylm[audio]",
+]
+api = [
+  "tinylm[cli]",
+  "fastapi>=0.115.12",
+  "uvicorn>=0.34.2",
+  "openai>=1.82.0",
+  "pydantic>=2.11.5",
+]
+audio = [
+  "pydub>=0.25.1",
+  "audioop-lts>=0.2.1",
+]
+cli = ["typer>=0.16.0", "rich>=14.0.0", "tinylm[hf]"]
+hf = [
+  "huggingface-hub>=0.32.0",
+  "jinja2>=3.1.6",
+  "transformers>=4.52.3",
+]
+test = [
+  "torch>=2.7.1",
+  "torchaudio>=2.7.1",
+  "pytest>=8.4.1",
+  "pytest-xdist>=3.7.0",
+]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.11.10",
-    "ty>=0.0.1a6",
+  "poethepoet>=0.42.0",
+  "ruff>=0.11.10",
+  "tombi>=0.7.32",
+  "ty>=0.0.1a6",
 ]
+
+[tool.poe.tasks]
+format.shell = "ruff format . && tombi format ."
+lint.shell = "ruff check . && tombi check ."
+
+[tool.uv.sources]
+tinygrad = { git = "https://github.com/tinygrad/tinygrad" }

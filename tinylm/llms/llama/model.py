@@ -29,7 +29,10 @@ class LlamaSiluMLP:
         self.down_proj = nn.Linear(ffn_dim, dim, bias=False)
 
     def __call__(self, x: Tensor) -> Tensor:
-        down_proj = self.down_proj(self.gate_proj(x).silu() * self.up_proj(x))
+        down_proj = self.down_proj(
+            self.gate_proj(x).silu()
+            * self.up_proj(x.contiguous().contiguous_backward())
+        )
         return down_proj
 
 
@@ -267,9 +270,7 @@ class LlamaModel:
         )
         position_embeddings = self.rotary_emb(x, pos_x, pos_y)
         for layer, kv_cache in zip(self.layers, kv_caches):
-            x = layer(
-                x, position_embeddings, attention_mask, real_len, kv_cache
-            )
+            x = layer(x, position_embeddings, attention_mask, real_len, kv_cache)
         x = self.norm(x)
         return x
 

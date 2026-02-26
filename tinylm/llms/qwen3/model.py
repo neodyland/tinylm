@@ -47,8 +47,21 @@ class Qwen3Attention:
         hidden_shape = (*input_shape, -1, self.head_dim)
 
         query_states = self.q_norm(self.q_proj(x).view(hidden_shape)).transpose(1, 2)
-        key_states = self.k_norm(self.k_proj(x).view(hidden_shape)).transpose(1, 2)
-        value_states = self.v_proj(x).view(hidden_shape).transpose(1, 2)
+        key_states = (
+            self.k_norm(
+                self.k_proj(x.contiguous().contiguous_backward()).view(hidden_shape)
+            )
+            .transpose(1, 2)
+            .contiguous()
+            .contiguous_backward()
+        )
+        value_states = (
+            self.v_proj(x.contiguous().contiguous_backward())
+            .view(hidden_shape)
+            .transpose(1, 2)
+            .contiguous()
+            .contiguous_backward()
+        )
         query_states, key_states = llama_apply_rotary_pos_emb(
             query_states, key_states, position_embeddings[0], position_embeddings[1]
         )
@@ -107,7 +120,7 @@ class Qwen3Block:
         x = self.post_attention_layernorm(x)
         x = self.mlp(x)
         x = residual + x
-        return x
+        return x.contiguous().contiguous_backward()
 
 
 class Qwen3Model:
@@ -149,9 +162,7 @@ class Qwen3Model:
         )
         position_embeddings = self.rotary_emb(x, pos_x, pos_y)
         for layer, kv_cache in zip(self.layers, kv_caches):
-            x= layer(
-                x, position_embeddings, attention_mask, real_len, kv_cache
-            )
+            x = layer(x, position_embeddings, attention_mask, real_len, kv_cache)
         x = self.norm(x)
         return x
 

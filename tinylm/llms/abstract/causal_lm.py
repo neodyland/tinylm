@@ -1,6 +1,6 @@
 from tinygrad import Tensor
 from ..llama.cache import LlamaAbstractKvCache
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 
 class LlamaAbstractCausalLMForInference:
