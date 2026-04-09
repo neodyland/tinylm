@@ -23,6 +23,16 @@ def styled_markdown(text: str) -> Markdown:
     return Markdown(text)
 
 
+def remove_reasoning(text: str) -> str:
+    while True:
+        start = text.find("<think>")
+        end = text.find("</think>")
+        if start == -1 or end == -1:
+            break
+        text = text[:start] + text[end + len("</think>") :]
+    return text
+
+
 def remote_chat_main(model: str, api_key: str, api_base: str):
     ai = OpenAI(
         api_key=api_key,
@@ -50,12 +60,23 @@ def remote_chat_main(model: str, api_key: str, api_base: str):
         live.start()
         start_time = time.time()
         text = b""
+        is_reasoning = False
 
         response = ai.chat.completions.create(model=model, messages=chat, stream=True)
 
         for chunk in response:
             delta = chunk.choices[0].delta
             token = delta.content
+            reasoning_token = getattr(delta, "reasoning_content", None)
+            if reasoning_token is not None:
+                if is_reasoning:
+                    token = reasoning_token
+                else:
+                    token = f"\n<think>\n{reasoning_token}"
+                    is_reasoning = True
+            elif reasoning_token is None and token and is_reasoning:
+                token = f"\n</think>\n{token}"
+                is_reasoning = False
             if token:
                 text += token.encode("utf-8")
                 live.update(styled_markdown(text.decode("utf-8")))
@@ -66,6 +87,6 @@ def remote_chat_main(model: str, api_key: str, api_base: str):
 
         chat.append(
             ChatCompletionAssistantMessageParam(
-                content=text.decode("utf-8"), role="assistant"
+                content=remove_reasoning(text.decode("utf-8")), role="assistant"
             )
         )

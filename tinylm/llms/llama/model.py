@@ -267,9 +267,7 @@ class LlamaModel:
         )
         position_embeddings = self.rotary_emb(x, pos_x, pos_y)
         for layer, kv_cache in zip(self.layers, kv_caches):
-            x = layer(
-                x, position_embeddings, attention_mask, real_len, kv_cache
-            )
+            x = layer(x, position_embeddings, attention_mask, real_len, kv_cache)
         x = self.norm(x)
         return x
 
