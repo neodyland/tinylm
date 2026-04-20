@@ -14,10 +14,11 @@ def llama_logits_sample(
     logits = (logits != logits).where(-float("inf"), logits)
 
     t = (logits / temperature).softmax()
+    t_numel = t.numel()
 
     counter, counter2 = (
-        Tensor.arange(t.numel(), device=logits.device).contiguous(),
-        Tensor.arange(t.numel() - 1, -1, -1, device=logits.device).contiguous(),
+        Tensor.arange(t_numel, device=logits.device).contiguous(),
+        Tensor.arange(t_numel - 1, -1, -1, device=logits.device).contiguous(),
     )
 
     if top_k > 0:
@@ -27,7 +28,7 @@ def llama_logits_sample(
         )
         for i in range(top_k):
             t_argmax = (
-                t.numel() - ((t == (t_max := t.max())) * counter2).max() - 1
+                t_numel - ((t == (t_max := t.max())) * counter2).max() - 1
             ).cast(dtypes.default_int)
             output = output + t_max.unsqueeze(0).pad(((i, top_k - i - 1),))
             output_indices = output_indices + t_argmax.unsqueeze(0).pad(

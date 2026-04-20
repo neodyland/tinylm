@@ -85,6 +85,24 @@ def load_model(
     state_dict["model.rotary_emb.cos"] = model.model.rotary_emb.cos
     if "lm_head.weight" not in state_dict:
         state_dict["lm_head.weight"] = state_dict["model.embed_tokens.weight"]
+    for key in state_dict.keys():
+        if (
+            (
+                "self_attn" in key
+                and (
+                    "q_proj" in key
+                    or "k_proj" in key
+                    or "v_proj" in key
+                    or "o_proj" in key
+                )
+            )
+            or (
+                "mlp" in key
+                and ("gate_proj" in key or "up_proj" in key or "down_proj" in key)
+            )
+            or "lm_head" in key
+        ):
+            state_dict[key] = state_dict[key].T
     nn.state.load_state_dict(model, state_dict)
     total_params = sum(param.numel() for param in nn.state.get_parameters(model))
     console = Console()
@@ -135,6 +153,8 @@ def chat_main(model: ModelLiteral, dtype: DType):
             ),
         ).input_ids
         outputs = []
+        output_texts = ""
+        output_tokens = 0
         prefill_tokens = 0
         prefill_time = -1
         generate_time = -1
@@ -143,21 +163,26 @@ def chat_main(model: ModelLiteral, dtype: DType):
             max_new_tokens=context.model.ctx_len // 2,
         ):
             if chunk.type == "token":
+                output_tokens += 1
                 outputs.append(chunk.token)  # ty: ignore[possibly-unbound-attribute]
-                live.update(styled_markdown(tokenizer.decode(outputs)), refresh=True)
+                text = tokenizer.decode(outputs)
+                if text.endswith("\n") or text.endswith(" "):
+                    output_texts += text
+                    outputs = []
+                    live.update(styled_markdown(output_texts), refresh=True)
             elif chunk.type == "end":
+                output_texts += tokenizer.decode(outputs)
+                live.update(styled_markdown(output_texts), refresh=True)
                 live.stop()
                 generate_time = time.time() - generate_time
                 console.print(
-                    f"Input tokens: {len(input_ids)}\nOutput tokens: {len(outputs)}\nPrefill TPS: {prefill_tokens / prefill_time:.2f}\nGenerate TPS: {len(outputs) / generate_time:.2f}",
+                    f"Input tokens: {len(input_ids)}\nOutput tokens: {output_tokens}\nPrefill TPS: {prefill_tokens / prefill_time:.2f}\nGenerate TPS: {output_tokens / generate_time:.2f}",
                     style="green",
                 )
                 chat.append(
                     {
                         "role": "assistant",
-                        "content": tokenizer.decode(outputs)
-                        .split("</think>")[-1]
-                        .strip(),
+                        "content": output_texts.split("</think>")[-1].strip(),
                     }
                 )
             elif chunk.type == "prefill_start":

@@ -55,7 +55,7 @@ class LmTrainer(AbstractTrainer[LmBatch]):
 
     def next_batch(self):
         return LmBatch(
-            input_ids=Tensor.randint(4, 257, low=0, high=15000, dtype=dtypes.int64)
+            input_ids=Tensor.randint(4, 257, low=0, high=15000, dtype=dtypes.int)
         )
 
     def forward(self, batch):

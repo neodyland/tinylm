@@ -5,6 +5,7 @@ from ..llama.model import (
     llama_attention,
     llama_compute_attention_mask,
     LlamaRotaryEmbedding,
+    LlamaNoBiasLinear,
 )
 from ..llama.sample import llama_logits_sample
 from ..llama.cache import LlamaAbstractKvCache
@@ -24,10 +25,10 @@ class Qwen3Attention:
         head_dim: int,
         att_heads: int,
     ):
-        self.q_proj = nn.Linear(dim, att_heads * head_dim, bias=False)
-        self.k_proj = nn.Linear(dim, kv_heads * head_dim, bias=False)
-        self.v_proj = nn.Linear(dim, kv_heads * head_dim, bias=False)
-        self.o_proj = nn.Linear(att_heads * head_dim, dim, bias=False)
+        self.q_proj = LlamaNoBiasLinear(dim, att_heads * head_dim)
+        self.k_proj = LlamaNoBiasLinear(dim, kv_heads * head_dim)
+        self.v_proj = LlamaNoBiasLinear(dim, kv_heads * head_dim)
+        self.o_proj = LlamaNoBiasLinear(att_heads * head_dim, dim)
         self.q_norm = LlamaRMSNorm(head_dim)
         self.k_norm = LlamaRMSNorm(head_dim)
         self.att_heads = att_heads
@@ -106,7 +107,7 @@ class Qwen3Block:
         real_len: int,
         kv_cache: Optional[LlamaAbstractKvCache] = None,
     ) -> Tensor:
-        residual = x
+        residual = x.contiguous().contiguous_backward()
         x = self.input_layernorm(x)
         x = self.self_attn(
             x,
@@ -116,7 +117,7 @@ class Qwen3Block:
             kv_cache,
         )
         x = residual + x
-        residual = x
+        residual = x.contiguous().contiguous_backward()
         x = self.post_attention_layernorm(x)
         x = self.mlp(x)
         x = residual + x
@@ -153,12 +154,16 @@ class Qwen3Model:
         x = self.embed_tokens(x)
         pos_x, pos_y = (real_len - x.shape[1], real_len)
         position_ids = Tensor.arange(pos_x, pos_y)
-        attention_mask = llama_compute_attention_mask(
-            x.dtype,
-            x.shape[1],
-            real_len,
-            position_ids,
-            x.shape[0],
+        attention_mask = (
+            llama_compute_attention_mask(
+                x.dtype,
+                x.shape[1],
+                real_len,
+                position_ids,
+                x.shape[0],
+            )
+            if x.shape[1] > 1
+            else None
         )
         position_embeddings = self.rotary_emb(x, pos_x, pos_y)
         for layer, kv_cache in zip(self.layers, kv_caches):
@@ -195,7 +200,7 @@ class Qwen3ModelForCasualLM(
             att_heads,
             ctx_len,
         )
-        self.lm_head = nn.Linear(dim, vocab_size, bias=False)
+        self.lm_head = LlamaNoBiasLinear(dim, vocab_size)
         self.kv_heads = kv_heads
         self.head_dim = head_dim
 

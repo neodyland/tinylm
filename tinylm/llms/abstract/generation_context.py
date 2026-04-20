@@ -72,14 +72,18 @@ class LlamaAbstractGenerationContext:
 
     def warmup(self):
         prefill_times = 4  # just a magic number for now
+        prefill_input = Tensor(
+            [0] * self.prefill_chunk_size, dtype=dtypes.int
+        ).unsqueeze(0)
+        decode_input = Tensor([0], dtype=dtypes.int).unsqueeze(0)
         for _ in range(prefill_times):
             _ = self.model.prefill(
-                Tensor([0] * self.prefill_chunk_size, dtype=dtypes.int64).unsqueeze(0),
+                prefill_input,
                 self.len_var.bind(self.prefill_chunk_size),
                 self.kv_caches,
             )
             _ = self.model.inference(
-                Tensor([0], dtype=dtypes.int64).unsqueeze(0),
+                decode_input,
                 self.len_var.bind(self.model.ctx_len // 2),
                 self.kv_caches,
                 self.temperature,
@@ -110,7 +114,7 @@ class LlamaAbstractGenerationContext:
             chunk = input_ids[i:chunk_end]
             if len(chunk) < self.prefill_chunk_size:
                 chunk += [self.pad_token_id] * (self.prefill_chunk_size - len(chunk))
-            tensor = Tensor(chunk, dtype=dtypes.int64, requires_grad=False).unsqueeze(0)
+            tensor = Tensor(chunk, dtype=dtypes.int, requires_grad=False).unsqueeze(0)
             _ = self.model.prefill(
                 tensor,
                 self.len_var.bind(i + self.prefill_chunk_size),
@@ -118,19 +122,18 @@ class LlamaAbstractGenerationContext:
             )
         yield LlamaGenerationChunkPrefillEnd()
         reason = "max_new_tokens"
+        x = Tensor([input_ids[-1]], dtype=dtypes.int, requires_grad=False)
         for _ in range(max_new_tokens):
-            tensor = Tensor(
-                [input_ids[-1]], dtype=dtypes.int64, requires_grad=False
-            ).unsqueeze(0)
-            x = self.model.inference(
-                tensor,
+            y = self.model.inference(
+                x.unsqueeze(0),
                 self.len_var.bind(len(input_ids)),
                 self.kv_caches,
                 self.temperature,
                 self.top_p,
                 self.top_k,
             )
-            next_token = x[0].item()
+            x.assign(y).realize()
+            next_token = y[0].item()
             if self.is_eos(next_token):
                 reason = "eos"
                 break

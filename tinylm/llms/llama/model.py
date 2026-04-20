@@ -9,6 +9,14 @@ from ..abstract.causal_lm import (
 )
 
 
+class LlamaNoBiasLinear:
+    def __init__(self, dim1: int, dim2: int):
+        self.weight = Tensor.empty(dim1, dim2)
+
+    def __call__(self, x: Tensor) -> Tensor:
+        return x @ self.weight
+
+
 class LlamaRMSNorm:
     def __init__(self, dim: int, eps=1e-6):
         self.eps = eps
@@ -16,17 +24,16 @@ class LlamaRMSNorm:
 
     def __call__(self, x: Tensor) -> Tensor:
         input_dtype = x.dtype
-        x = x.cast(dtypes.float)
-        variance = x.pow(2).mean(-1, keepdim=True)
-        x = x * (variance + self.eps).rsqrt()
-        return self.weight * x.cast(input_dtype)
+        variance = x.cast(dtypes.float).pow(2).mean(-1, keepdim=True)
+        x = x.contiguous().contiguous_backward() * (variance + self.eps).rsqrt().cast(input_dtype)
+        return self.weight * x
 
 
 class LlamaSiluMLP:
     def __init__(self, dim: int, ffn_dim: int):
-        self.gate_proj = nn.Linear(dim, ffn_dim, bias=False)
-        self.up_proj = nn.Linear(dim, ffn_dim, bias=False)
-        self.down_proj = nn.Linear(ffn_dim, dim, bias=False)
+        self.gate_proj = LlamaNoBiasLinear(dim, ffn_dim)
+        self.up_proj = LlamaNoBiasLinear(dim, ffn_dim)
+        self.down_proj = LlamaNoBiasLinear(ffn_dim, dim)
 
     def __call__(self, x: Tensor) -> Tensor:
         down_proj = self.down_proj(
@@ -56,7 +63,7 @@ def llama_init_rope(rope_theta: float, head_dim: int):
     inv_freq = 1.0 / (
         rope_theta
         ** (
-            Tensor.arange(0, head_dim, 2, dtype=dtypes.int64).cast(dtypes.float)
+            Tensor.arange(0, head_dim, 2, dtype=dtypes.int).cast(dtypes.float)
             / head_dim
         )
     )
@@ -65,7 +72,7 @@ def llama_init_rope(rope_theta: float, head_dim: int):
 
 def llama_precompute_rope(inv_freq: Tensor, ctx_len: int):
     position_ids = (
-        Tensor.arange(ctx_len, dtype=dtypes.int64).cast(dtypes.float).unsqueeze(0)
+        Tensor.arange(ctx_len, dtype=dtypes.int).cast(dtypes.float).unsqueeze(0)
     )
     inv_freq_expanded = (
         inv_freq[None, :, None].cast(dtypes.float).expand(position_ids.shape[0], -1, 1)
@@ -326,9 +333,8 @@ class LlamaModelForCasualLM(
         top_p: float,
         top_k: int,
     ) -> Tensor:
-        x = self.model(x, real_len, kv_caches)
-        x = self.lm_head(x[:, -1, :])
-        return llama_logits_sample(x, temperature, top_p, top_k).realize()
+        h = self.lm_head(self.model(x, real_len, kv_caches)[:, -1, :])
+        return llama_logits_sample(h, temperature, top_p, top_k).realize()
 
     @TinyJit
     def prefill(
