@@ -89,8 +89,8 @@ class LlamaRotaryEmbedding:
     def __init__(self, rope_theta: int, head_dim: int, ctx_len: int):
         inv_freq = llama_init_rope(rope_theta, head_dim)
         emb = llama_precompute_rope(inv_freq, ctx_len)
-        self.cos = emb.cos()
-        self.sin = emb.sin()
+        self.cos = emb.cos().contiguous().realize()
+        self.sin = emb.sin().contiguous().realize()
 
     def __call__(self, x: Tensor, pos_x: int, pos_y: int) -> Tuple[Tensor, Tensor]:
         return self.cos[:, pos_x:pos_y].cast(x.dtype), self.sin[:, pos_x:pos_y].cast(
