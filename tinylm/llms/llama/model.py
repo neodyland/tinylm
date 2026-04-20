@@ -25,22 +25,29 @@ class LlamaRMSNorm:
     def __call__(self, x: Tensor) -> Tensor:
         input_dtype = x.dtype
         variance = x.cast(dtypes.float).pow(2).mean(-1, keepdim=True)
-        x = x.contiguous().contiguous_backward() * (variance + self.eps).rsqrt().cast(input_dtype)
+        x = x.contiguous().contiguous_backward() * (variance + self.eps).rsqrt().cast(
+            input_dtype
+        )
         return self.weight * x
 
 
 class LlamaSiluMLP:
     def __init__(self, dim: int, ffn_dim: int):
-        self.gate_proj = LlamaNoBiasLinear(dim, ffn_dim)
-        self.up_proj = LlamaNoBiasLinear(dim, ffn_dim)
+        # self.gate_proj = LlamaNoBiasLinear(dim, ffn_dim)
+        # self.up_proj = LlamaNoBiasLinear(dim, ffn_dim)
+        self.gate_up_proj = LlamaNoBiasLinear(dim, 2 * ffn_dim)
         self.down_proj = LlamaNoBiasLinear(ffn_dim, dim)
+        self.ffn_dim = ffn_dim
 
     def __call__(self, x: Tensor) -> Tensor:
-        down_proj = self.down_proj(
-            self.gate_proj(x).silu()
-            * self.up_proj(x.contiguous().contiguous_backward())
-        )
-        return down_proj
+        gate_up = self.gate_up_proj(x)
+        gate, up = gate_up.split(self.ffn_dim, dim=-1)
+        return self.down_proj(gate.silu() * up)
+        # down_proj = self.down_proj(
+        #    self.gate_proj(x).silu()
+        #    * self.up_proj(x.contiguous().contiguous_backward())
+        # )
+        # return down_proj
 
 
 def llama_rotate_half(x: Tensor):
@@ -99,9 +106,9 @@ class LlamaRotaryEmbedding:
 
 
 def llama_repeat_kv(hidden_states: Tensor, n_rep: int) -> Tensor:
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     hidden_states = hidden_states.unsqueeze(2).expand(
         batch, num_key_value_heads, n_rep, slen, head_dim
     )
@@ -116,6 +123,7 @@ def llama_attention(
     scaling: float,
     attention_mask: Optional[Tensor],
 ) -> Tensor:
+    B, _, T, _ = query_states.shape
     key_states = llama_repeat_kv(key_states, n_rep)
     value_states = llama_repeat_kv(value_states, n_rep)
     attn_weights = (query_states @ key_states.transpose(2, 3)) * scaling
@@ -126,8 +134,8 @@ def llama_attention(
         query_states.dtype
     )
     attn_output = attn_weights @ value_states
-    attn_output = attn_output.transpose(1, 2).contiguous()
-    return attn_output
+    attn_output = attn_output.permute(0, 2, 1, 3)
+    return attn_output.reshape(B, T, -1)
 
 
 def llama_compute_attention_mask(

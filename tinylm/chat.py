@@ -39,7 +39,7 @@ def model_factory(model: ModelLiteral):
             vocab_size=151936,
             rope_theta=1000000,
             att_heads=16,
-            ctx_len=40960,
+            ctx_len=4096,
         )
     elif model == "llm-jp/llm-jp-3.1-1.8b-instruct4":
         return LlamaModelForCasualLM(
@@ -78,6 +78,7 @@ def load_model(
         )
     except Exception:
         generation_config = AbstractGenerationConfig()
+    generation_config.temperature = 0
     model = model_factory(model)
     state_dict = nn.state.safe_load(path)
     state_dict = state_dict_to_dtype(state_dict, dtype=dtype)
@@ -103,6 +104,19 @@ def load_model(
             or "lm_head" in key
         ):
             state_dict[key] = state_dict[key].T
+    if isinstance(model, Qwen3ModelForCasualLM):
+        for i in range(len(model.model.layers)):
+            q_proj_weight = state_dict.pop(f"model.layers.{i}.self_attn.q_proj.weight")
+            k_proj_weight = state_dict.pop(f"model.layers.{i}.self_attn.k_proj.weight")
+            v_proj_weight = state_dict.pop(f"model.layers.{i}.self_attn.v_proj.weight")
+            qkv_weight = Tensor.cat(q_proj_weight, k_proj_weight, v_proj_weight, dim=-1)
+            state_dict[f"model.layers.{i}.self_attn.qkv_proj.weight"] = qkv_weight
+            gate_proj_weight = state_dict.pop(f"model.layers.{i}.mlp.gate_proj.weight")
+            up_proj_weight = state_dict.pop(f"model.layers.{i}.mlp.up_proj.weight")
+            gate_up_proj_weight = Tensor.cat(gate_proj_weight, up_proj_weight, dim=-1)
+            state_dict[f"model.layers.{i}.mlp.gate_up_proj.weight"] = (
+                gate_up_proj_weight
+            )
     nn.state.load_state_dict(model, state_dict)
     total_params = sum(param.numel() for param in nn.state.get_parameters(model))
     console = Console()

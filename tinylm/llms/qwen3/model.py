@@ -25,9 +25,10 @@ class Qwen3Attention:
         head_dim: int,
         att_heads: int,
     ):
-        self.q_proj = LlamaNoBiasLinear(dim, att_heads * head_dim)
-        self.k_proj = LlamaNoBiasLinear(dim, kv_heads * head_dim)
-        self.v_proj = LlamaNoBiasLinear(dim, kv_heads * head_dim)
+        # self.q_proj = LlamaNoBiasLinear(dim, att_heads * head_dim)
+        # self.k_proj = LlamaNoBiasLinear(dim, kv_heads * head_dim)
+        # self.v_proj = LlamaNoBiasLinear(dim, kv_heads * head_dim)
+        self.qkv_proj = LlamaNoBiasLinear(dim, (att_heads + 2 * kv_heads) * head_dim)
         self.o_proj = LlamaNoBiasLinear(att_heads * head_dim, dim)
         self.q_norm = LlamaRMSNorm(head_dim)
         self.k_norm = LlamaRMSNorm(head_dim)
@@ -47,40 +48,33 @@ class Qwen3Attention:
         input_shape = x.shape[:-1]
         hidden_shape = (*input_shape, -1, self.head_dim)
 
-        query_states = self.q_norm(self.q_proj(x).view(hidden_shape)).transpose(1, 2)
-        key_states = (
-            self.k_norm(
-                self.k_proj(x.contiguous().contiguous_backward()).view(hidden_shape)
-            )
-            .transpose(1, 2)
-            .contiguous()
-            .contiguous_backward()
+        q, k, v = self.qkv_proj(x).split(
+            [
+                self.att_heads * self.head_dim,
+                self.kv_heads * self.head_dim,
+                self.kv_heads * self.head_dim,
+            ],
+            dim=-1,
         )
-        value_states = (
-            self.v_proj(x.contiguous().contiguous_backward())
-            .view(hidden_shape)
-            .transpose(1, 2)
-            .contiguous()
-            .contiguous_backward()
-        )
-        query_states, key_states = llama_apply_rotary_pos_emb(
-            query_states, key_states, position_embeddings[0], position_embeddings[1]
+        q = self.q_norm(q.view(hidden_shape)).transpose(1, 2)
+        k = self.k_norm(k.view(hidden_shape)).transpose(1, 2)
+        v = v.view(hidden_shape).transpose(1, 2)
+        q, k = llama_apply_rotary_pos_emb(
+            q, k, position_embeddings[0], position_embeddings[1]
         )
         if kv_cache is not None:
-            key_states, value_states = kv_cache.update(
-                key_states, value_states, real_len
-            )
+            k, v = kv_cache.update(k, v, real_len)
 
         attn_output = llama_attention(
-            key_states,
-            value_states,
-            query_states,
+            k,
+            v,
+            q,
             self.att_heads // self.kv_heads,
             self.scaling,
             attention_mask,
         )
 
-        attn_output = attn_output.reshape(*input_shape, -1).contiguous()
+        attn_output = attn_output.reshape(*input_shape, -1)
         attn_output = self.o_proj(attn_output)
         return attn_output
 
@@ -107,7 +101,7 @@ class Qwen3Block:
         real_len: int,
         kv_cache: Optional[LlamaAbstractKvCache] = None,
     ) -> Tensor:
-        residual = x.contiguous().contiguous_backward()
+        residual = x
         x = self.input_layernorm(x)
         x = self.self_attn(
             x,
@@ -117,11 +111,11 @@ class Qwen3Block:
             kv_cache,
         )
         x = residual + x
-        residual = x.contiguous().contiguous_backward()
+        residual = x
         x = self.post_attention_layernorm(x)
         x = self.mlp(x)
         x = residual + x
-        return x.contiguous().contiguous_backward()
+        return x
 
 
 class Qwen3Model:
@@ -225,11 +219,11 @@ class Qwen3ModelForCasualLM(
     ) -> Tensor:
         x = self.model(x, real_len, kv_caches)
         x = self.lm_head(x[:, -1, :])
-        return llama_logits_sample(x, temperature, top_p, top_k).realize()
+        return llama_logits_sample(x, temperature, top_p, top_k)
 
     @TinyJit
     def prefill(
         self, x: Tensor, real_len: int, kv_caches: List[Optional[LlamaAbstractKvCache]]
     ) -> Tensor:
         x = self.model(x, real_len, kv_caches)
-        return x.realize()
+        return x

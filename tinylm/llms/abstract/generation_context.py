@@ -132,7 +132,7 @@ class LlamaAbstractGenerationContext:
                 self.top_p,
                 self.top_k,
             )
-            x.assign(y).realize()
+            x.assign(y)
             next_token = y[0].item()
             if self.is_eos(next_token):
                 reason = "eos"
