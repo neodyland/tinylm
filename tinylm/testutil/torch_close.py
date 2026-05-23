@@ -38,7 +38,7 @@ class TorchTinygradCloseTest:
 
     def run(self, data: np.ndarray | int | float):
         if isinstance(data, np.ndarray):
-            xtg = Tensor(data, requires_grad=False).clone()
+            xtg = Tensor(data).clone()
             xpt = torch.tensor(data, dtype=torch.float32)
         else:
             xtg = data

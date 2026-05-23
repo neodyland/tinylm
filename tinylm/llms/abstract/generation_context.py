@@ -114,7 +114,7 @@ class LlamaAbstractGenerationContext:
             chunk = input_ids[i:chunk_end]
             if len(chunk) < self.prefill_chunk_size:
                 chunk += [self.pad_token_id] * (self.prefill_chunk_size - len(chunk))
-            tensor = Tensor(chunk, dtype=dtypes.int, requires_grad=False).unsqueeze(0)
+            tensor = Tensor(chunk, dtype=dtypes.int).unsqueeze(0)
             _ = self.model.prefill(
                 tensor,
                 self.len_var.bind(i + self.prefill_chunk_size),
@@ -122,7 +122,7 @@ class LlamaAbstractGenerationContext:
             )
         yield LlamaGenerationChunkPrefillEnd()
         reason = "max_new_tokens"
-        x = Tensor([input_ids[-1]], dtype=dtypes.int, requires_grad=False)
+        x = Tensor([input_ids[-1]], dtype=dtypes.int)
         for _ in range(max_new_tokens):
             y = self.model.inference(
                 x.unsqueeze(0),

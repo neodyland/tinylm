@@ -32,7 +32,7 @@ def fft_in(x: Tensor) -> Tensor:
     for p in range(log2_N):
         size = 1 << (p + 1)
         half_size = size // 2
-        k = Tensor.arange(half_size, requires_grad=False)
+        k = Tensor.arange(half_size)
         angle = -2.0 * math.pi * k / size
         W_real = angle.cos()
         W_imag = angle.sin()
